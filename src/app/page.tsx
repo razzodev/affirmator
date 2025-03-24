@@ -2,7 +2,8 @@
 // Home.tsx
 "use client";
 import React, { useState, useEffect } from "react";
-import { affirmationSettingsService, AffirmationSettingsType, handleStreakUpdate } from "@/services/AffirmationSettings";
+import { affirmationSettingsService, AffirmationSettingsType } from "@/services/AffirmationSettings";
+import { handleStreakUpdate } from "@/services/AffirmationSettingsUtils";
 import { VoiceService } from "@/services/VoiceService"; // Adjust the path as needed
 
 import { Card } from "@/components/ui/card";
@@ -26,7 +27,6 @@ export default function Home() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [voiceService, setVoiceService] = useState<VoiceService | null>(null);
   const [voicesLoaded, setVoicesLoaded] = useState<boolean>(false); // Add this state
-  // const endDelay = useRef(2000); // Add a ref for end delay (in milliseconds)
 
   const loadSettings = async (): Promise<void> => {
     setIsLoading(true);
@@ -83,7 +83,7 @@ export default function Home() {
 
 
   const adjustDailyCount = async (increment: number): Promise<void> => {
-    if (!settings) return;
+    if (!settings || !settings.id) return;
     const updatedSettings = await affirmationSettingsService.update(settings.id, {
       daily_count: Math.max(0, settings.daily_count + increment),
     });
