@@ -1,7 +1,8 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 // Home.tsx
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { affirmationSettingsService, AffirmationSettingsType, defaultSettings } from "@/services/AffirmationSettings";
+import { affirmationSettingsService, AffirmationSettingsType, handleStreakUpdate } from "@/services/AffirmationSettings";
 import { VoiceService } from "@/services/VoiceService"; // Adjust the path as needed
 
 import { Card } from "@/components/ui/card";
@@ -16,7 +17,6 @@ import {
   Timer,
   Star,
 } from "lucide-react";
-import { format, set } from "date-fns";
 
 export default function Home() {
   const [settings, setSettings] = useState<AffirmationSettingsType | null>(null);
@@ -32,8 +32,11 @@ export default function Home() {
   const loadSettings = async (): Promise<void> => {
     setIsLoading(true);
     try {
-      const settings = await affirmationSettingsService.list();
-      handleStreakUpdate(settings[0]);
+      const loadedSettings = await affirmationSettingsService.list();
+      console.log(loadedSettings[0]);
+
+      setSettings(loadedSettings[0]);
+      if (settings) handleStreakUpdate(settings, affirmationSettingsService, setSettings);
     } catch (error) {
       console.error("Error loading settings:", error);
     }
@@ -51,6 +54,7 @@ export default function Home() {
 
       }
       if (settings) {
+        console.log(settings.voice_name);
 
         setVoiceService(new VoiceService({
           text: settings.affirmation_text,
@@ -65,7 +69,6 @@ export default function Home() {
 
   useEffect(() => {
     if (voicesLoaded && settings?.affirmation_text && settings?.voice_speed) {
-      // setWords(settings.affirmation_text.split(" "));
       let voice: SpeechSynthesisVoice | null = null;
       if (settings.voice_name) {
         voice = window.speechSynthesis.getVoices().find((v) => v.name === settings.voice_name) || null;
@@ -79,33 +82,6 @@ export default function Home() {
     }
   }, [settings?.affirmation_text, settings?.voice_speed, settings?.voice_name, voicesLoaded]);
 
-  const handleStreakUpdate = async (settings: AffirmationSettingsType) => {
-    const isPracticedToday = format(new Date(settings.last_practice_date), "yyyy-MM-dd") !== format(new Date(), "yyyy-MM-dd")
-    const isPracticedYesterday = format(new Date(settings.last_practice_date), "yyyy-MM-dd") === format(new Date(new Date().setDate(new Date().getDate() - 1)), "yyyy-MM-dd")
-    if (!isPracticedToday) {
-      if (isPracticedYesterday) {
-        await affirmationSettingsService.update(settings.id, {
-          daily_count: 0,
-          current_streak: settings.current_streak + 1,
-          last_practice_date: new Date().toISOString(),
-        })
-      } else {
-        await affirmationSettingsService.update(settings.id, {
-          daily_count: 0,
-          last_practice_date: new Date().toISOString(),
-          current_streak: 0,
-        })
-      }
-      const updatedSettings = await affirmationSettingsService.list();
-      if (updatedSettings.length > 0) setSettings(updatedSettings[0]);
-
-    } else {
-      const newSettings = await affirmationSettingsService.create(defaultSettings);
-      if (newSettings !== undefined) setSettings(newSettings);
-    }
-  };
-
-
 
   const adjustDailyCount = async (increment: number): Promise<void> => {
     if (!settings) return;
@@ -115,26 +91,15 @@ export default function Home() {
     if (updatedSettings) setSettings(updatedSettings);
   };
 
-  const handlePlayPause = (): void => {
-    if (!isPlaying) {
-      // setCurrentWordIndex(0);
-    }
-    setIsPlaying(!isPlaying);
-  };
+  const handlePlayPause = (): void => setIsPlaying(!isPlaying);
 
   const handleStop = (): void => {
     setIsPlaying(false);
-    // setCurrentWordIndex(0);
-    setIsLooping(false); // Reset loop when stopped
+    setIsLooping(false);
   };
 
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-
-  if (!settings) {
-    return <div>No settings found</div>;
-  }
+  if (isLoading) return <div>Loading...</div>;
+  if (!settings) return <div>No settings found</div>;
 
   return (
     <div className="space-y-6">
@@ -165,12 +130,11 @@ export default function Home() {
           rate={settings.voice_speed}
           volume={1}
           voiceURI={settings.voice_name}
-          // highlightMode={true}
+
           highlightText={true}
           showOnlyHighlightedText={false}
         >
-
-          {({ speechStatus, isInQueue, start, pause, stop }) => (
+          {({ speechStatus, start, pause, stop }) => (
             <>
               <div
                 style={{
@@ -187,9 +151,7 @@ export default function Home() {
                     )}
                   </>
                 )}
-
                 <div className="flex justify-center gap-3 mb-6">
-
                   <Button
                     size="lg"
                     variant={isPlaying ? "outline" : "default"}
@@ -204,7 +166,7 @@ export default function Home() {
                       };
                     }}
                   >
-                    {isPlaying ? "Pause" : "Play"}
+                    {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
                   </Button>
                   <Button size="lg" variant="outline" onClick={() => {
                     handleStop()
@@ -221,7 +183,6 @@ export default function Home() {
                   </Button>
                 </div>
               </div>
-
             </>
           )}
         </Speech>
@@ -245,97 +206,3 @@ export default function Home() {
     </div >
   );
 }
-
-// import { useContext, useState } from "react";
-// import Counter from "../components/Counter.jsx";
-// import { AppContext } from "../Context";
-// import Speech, { HighlightedText } from "react-text-to-speech";
-// import UseVoices from "../components/UseVoices";
-// export default function Home() {
-//   const {
-//     affirmationText,
-//     repeatCounter,
-//     setRepeatCounter,
-//     dayStreak,
-//     dayCounter,
-//     setDayCounter,
-//     voice,
-//     speechSpeed,
-//   } = AppContext();
-
-//   const [isLoop, setIsLoop] = useState(false);
-//   return (
-//     <div>
-//       <div style={{ display: "flex", flexDirection: "column" }}>
-//         <Speech
-//           text={affirmationText}
-//           pitch={1}
-//           rate={speechSpeed}
-//           volume={1}
-//           voiceURI={voice}
-//           // highlightMode={true}
-//           highlightText={true}
-//           showOnlyHighlightedText={true}
-//         >
-//           {({ speechStatus, isInQueue, start, pause, stop }) => (
-//             <div
-//               style={{
-//                 display: "flex",
-//                 justifyContent: "center",
-//                 columnGap: "0.5rem",
-//               }}
-//             >
-//               {isLoop &&
-//                 speechStatus === "stopped" &&
-//                 (() => {
-//                   start();
-//                   setRepeatCounter((state) => Number(state) + 1);
-//                 })()}
-//               {speechStatus !== "started" ? (
-//                 <button
-//                   onClick={() => {
-//                     start();
-//                     setRepeatCounter((state) => Number(state) + 1);
-//                   }}
-//                 >
-//                   Start
-//                 </button>
-//               ) : (
-//                 <>
-//                   <button onClick={() => setIsLoop((state) => !state)}>
-//                     {!isLoop ? "Loop" : "Off"}
-//                   </button>
-//                   <button onClick={pause}>Pause</button>
-//                 </>
-//               )}
-//               <button
-//                 onClick={() => {
-//                   stop();
-//                   setIsLoop(false);
-//                 }}
-//               >
-//                 Stop
-//               </button>
-//               <div></div>
-//             </div>
-//           )}
-//         </Speech>
-//         <pre style={{ flex: "1", minHeight: "-webkit-fill-available" }}>
-//           {affirmationText}
-//         </pre>
-//         <HighlightedText style={{ height: "26px" }}>
-//           {affirmationText}
-//         </HighlightedText>
-//       </div>
-//       <div>
-//         <p>days: {dayStreak}</p>
-//       </div>
-//       {/* <Counter label="days" state={dayCounter} action={setDayCounter} /> */}
-//       <Counter
-//         label="repeats"
-//         state={repeatCounter}
-//         action={setRepeatCounter}
-//       />
-//     </div>
-//   );
-// }

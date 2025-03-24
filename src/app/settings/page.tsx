@@ -28,32 +28,33 @@ export default function Settings() {
 
     useEffect(() => {
         loadSettings();
-        loadVoices();
     }, []);
 
+    useEffect(() => {
+        loadVoices();
+    }, [settings]);
 
     const loadVoices = (): void => {
         if (typeof window !== "undefined" && typeof window.speechSynthesis !== "undefined") {
             const allVoices = window.speechSynthesis.getVoices();
             setVoices(allVoices);
         }
-
-        const voice = voices.find((v) => v.name === localVoiceName);
-        if (voice) updateVoiceService(voice.name);
-
+        if (localVoiceName) {
+            updateVoiceService(localVoiceName);
+        }
     };
 
-    const updateVoiceService = (voice: string): void => {
+    const updateVoiceService = (voice = settings?.voice_name): void => {
         const voiceName = voices.find((v) => v.name === voice);
         setPreviewVoiceService(new VoiceService({
             text: 'i will be speaking your affirmations',
-            rate: 1,
-            voice: voiceName
+            rate: settings?.voice_speed,
+            voice: voiceName,
         }));
-    }
+    };
 
     useEffect(() => {
-        if (localVoiceName) updateVoiceService(localVoiceName)
+        if (localVoiceName) updateVoiceService(localVoiceName);
     }, [localVoiceName]);
 
     const loadSettings = async (): Promise<void> => {
@@ -93,6 +94,7 @@ export default function Settings() {
         e.preventDefault();
         setIsSaving(true);
         const updatedValues = getFormValues(e)
+        console.log(updatedValues);
 
 
         try {
@@ -101,6 +103,8 @@ export default function Settings() {
                 ...updatedValues,    // Update the fields with the new values
             };
             if (settings && settings.id) {
+                console.log('update settings', updatedSettings);
+
                 await affirmationSettingsService.update(settings.id, updatedSettings);
             } else {
                 const newSetting: AffirmationSettingsType = {

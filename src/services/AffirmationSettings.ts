@@ -6,11 +6,10 @@ interface AffirmationSettingsBase {
     daily_goal: number;
     streak_goal: number;
     voice_speed: number;
-    last_practice_date: string; // or Date
+    last_practice_date: string;
     current_streak: number;
     daily_count: number;
     voice_name?: string;
-
 }
 
 export interface AffirmationSettingsType extends AffirmationSettingsBase {
@@ -23,6 +22,7 @@ interface ExportedSettings {
     settings: AffirmationSettingsType;
     version: number;
 }
+
 export const defaultSettings: AffirmationSettingsType = {
     id: uuidv4(),
     affirmation_text: 'write your affirmation here',
@@ -32,10 +32,8 @@ export const defaultSettings: AffirmationSettingsType = {
     last_practice_date: new Date().toISOString(),
     current_streak: 0,
     daily_count: 0,
-    voice_name: 'en-US-Wavenet-D',
+    voice_name: 'Samantha',
 };
-
-
 
 export class AffirmationSettingsService {
     private dbPromise: Promise<IDBPDatabase<unknown>> | null = null;
@@ -53,7 +51,7 @@ export class AffirmationSettingsService {
         this.dbPromise = openDB('AffirmationSettingsDB', 1, {
             upgrade(db) {
                 if (!db.objectStoreNames.contains('affirmationSettings')) {
-                    db.createObjectStore('affirmationSettings', { keyPath: 'id' });
+                    db.createObjectStore('affirmationSettings', { keyPath: 'id' }); // Use keyPath 'id'
                 }
             },
         });
@@ -65,10 +63,10 @@ export class AffirmationSettingsService {
             await this.initializationPromise;
         }
         if (!this.dbPromise) {
-            return [];
+            return [defaultSettings]; // Return default settings as array
         }
         const db = await this.dbPromise;
-        return db.getAll(this.storeName);
+        return await db.getAll(this.storeName) as AffirmationSettingsType[];
     }
 
     async create(settings: AffirmationSettingsBase): Promise<AffirmationSettingsType | undefined> {
@@ -78,9 +76,8 @@ export class AffirmationSettingsService {
         if (!this.dbPromise) {
             return undefined;
         }
-        const id = uuidv4();
         const db = await this.dbPromise;
-        const newSettings = { id, ...settings };
+        const newSettings = { ...settings, id: uuidv4() };
         await db.put(this.storeName, newSettings);
         return newSettings;
     }
@@ -101,8 +98,7 @@ export class AffirmationSettingsService {
             ...existing,
             ...updates,
             voice_speed: updates.voice_speed !== undefined ? Math.min(Math.max(updates.voice_speed, 0.5), 2) : existing.voice_speed,
-            voice_name: updates.voice_name !== undefined ? updates.voice_name : existing.voice_name, // Add this line
-
+            voice_name: updates.voice_name !== undefined ? updates.voice_name : existing.voice_name,
         };
         await db.put(this.storeName, updated);
         return updated;
@@ -123,29 +119,24 @@ export class AffirmationSettingsService {
     async exportSettings(): Promise<string | null> {
         const settings = await this.list();
         if (settings.length > 0) {
-            return JSON.stringify(settings[0]);
+            return JSON.stringify(settings);
         }
         return null;
     }
-
 
     async importSettings(settingsJson: string): Promise<AffirmationSettingsType | undefined> {
         try {
             const parsedData: ExportedSettings | AffirmationSettingsType = JSON.parse(settingsJson);
 
-            // Version handling (if you have it)
             if (typeof (parsedData as ExportedSettings).version === 'number') {
                 const exportedSettings = parsedData as ExportedSettings;
                 if (exportedSettings.version === 1) {
-                    return await this.create(exportedSettings.settings); // Version 1, no migration needed
+                    return await this.create(exportedSettings.settings);
                 } else if (exportedSettings.version === 2) {
-                    // Migration logic for version 2 (if different)
                     const migratedSettings = this.migrateSettingsV1toV2(exportedSettings.settings);
                     return await this.create(migratedSettings);
                 }
-                // Add more version migration logic as needed
             } else {
-                // Fallback logic (no version)
                 return await this.create(parsedData as AffirmationSettingsType);
             }
         } catch (error) {
@@ -154,15 +145,15 @@ export class AffirmationSettingsService {
         return undefined;
     }
 
-    // Example migration function
     private migrateSettingsV1toV2(oldSettings: AffirmationSettingsType): AffirmationSettingsType {
-        // Example: Add a new field, or handle a renamed field.
         const newSettings = { ...oldSettings };
         if (!newSettings.voice_name) {
-            newSettings.voice_name = 'Default Voice'; // Provide a default value
+            newSettings.voice_name = 'Default Voice';
         }
         return newSettings;
     }
 }
 
 export const affirmationSettingsService = new AffirmationSettingsService();
+
+export { handleStreakUpdate } from './AffirmationSettingsUtils'
