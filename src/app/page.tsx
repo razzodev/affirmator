@@ -195,7 +195,7 @@ export default function Home() {
             <Minus className="w-4 h-4" />
           </Button>
           <div className="px-4 py-2 bg-gray-100 rounded-md font-medium">
-            {settings?.daily_count}
+            {settings?.daily_count.toString()}
           </div>
           <Button variant="outline" onClick={() => adjustDailyCount(1)}>
             <Plus className="w-4 h-4" />
