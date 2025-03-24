@@ -1,103 +1,215 @@
-import Image from "next/image";
+// Home.tsx
+"use client";
+import React, { useState, useEffect } from "react";
+import { affirmationSettingsService, AffirmationSettingsType } from "@/entities/AffirmationSettings";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  Plus,
+  Minus,
+  Timer,
+  Star,
+} from "lucide-react";
+import { format } from "date-fns";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [settings, setSettings] = useState<AffirmationSettingsType | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [currentWordIndex, setCurrentWordIndex] = useState<number>(0);
+  const [words, setWords] = useState<string[]>([]);
+  const [isLooping, setIsLooping] = useState<boolean>(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  useEffect(() => {
+    loadSettings().then();
+
+  }, []);
+
+  useEffect(() => {
+    if (settings?.affirmation_text) {
+      setWords(settings.affirmation_text.split(" "));
+    }
+  }, [settings?.affirmation_text]);
+
+  const loadSettings = async (): Promise<void> => {
+    setIsLoading(true);
+    try {
+      const userSettings = await affirmationSettingsService.list();
+      if (userSettings.length > 0) {
+        setSettings(userSettings[0]);
+        if (
+          userSettings[0].last_practice_date &&
+          format(new Date(userSettings[0].last_practice_date), "yyyy-MM-dd") !==
+          format(new Date(), "yyyy-MM-dd")
+        ) {
+          if (
+            format(new Date(userSettings[0].last_practice_date), "yyyy-MM-dd") ===
+            format(new Date(new Date().setDate(new Date().getDate() - 1)), "yyyy-MM-dd")
+          ) {
+            await affirmationSettingsService.update(userSettings[0].id, {
+              daily_count: 0,
+              last_practice_date: new Date().toISOString(),
+              current_streak: userSettings[0].current_streak + 1,
+            });
+          } else {
+            await affirmationSettingsService.update(userSettings[0].id, {
+              daily_count: 0,
+              last_practice_date: new Date().toISOString(),
+              current_streak: 0,
+            });
+          }
+          const updatedSettings = await affirmationSettingsService.list();
+          if (updatedSettings.length > 0) setSettings(updatedSettings[0]);
+        }
+      } else {
+        const newSettings = await affirmationSettingsService.create({
+          affirmation_text: "I am capable of achieving great things",
+          daily_goal: 10,
+          streak_goal: 21,
+          voice_speed: 1,
+          last_practice_date: new Date().toISOString(),
+          current_streak: 0,
+          daily_count: 0,
+        });
+        if (newSettings !== undefined) setSettings(newSettings);
+      }
+    } catch (error) {
+      console.error("Error loading settings:", error);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isPlaying && words.length > 0) {
+      interval = setInterval(() => {
+        setCurrentWordIndex((prevIndex) => {
+          if (prevIndex >= words.length - 1) {
+            if (isLooping) {
+              incrementDailyCount();
+              return 0;
+            } else {
+              setIsPlaying(false);
+              incrementDailyCount();
+              return prevIndex;
+            }
+          }
+          return prevIndex + 1;
+        });
+      }, settings?.voice_speed ? settings.voice_speed * 300 : 300);
+    }
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, words, isLooping, settings?.voice_speed]);
+
+  const incrementDailyCount = async (): Promise<void> => {
+    if (!settings) return;
+    const updatedSettings = await affirmationSettingsService.update(settings.id, {
+      daily_count: settings.daily_count + 1,
+      last_practice_date: new Date().toISOString(),
+    });
+    if (updatedSettings) setSettings(updatedSettings);
+  };
+
+  const adjustDailyCount = async (increment: number): Promise<void> => {
+    if (!settings) return;
+    const updatedSettings = await affirmationSettingsService.update(settings.id, {
+      daily_count: Math.max(0, settings.daily_count + increment),
+    });
+    if (updatedSettings) setSettings(updatedSettings);
+  };
+
+  const handlePlayPause = (): void => {
+    if (!isPlaying) {
+      setCurrentWordIndex(0);
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleStop = (): void => {
+    setIsPlaying(false);
+    setCurrentWordIndex(0);
+  };
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!settings) {
+    return <div>No settings found</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-6">
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-2">
+            <Timer className="w-5 h-5 text-purple-500" />
+            <span className="text-lg font-medium">
+              Today: {settings.daily_count} / {settings.daily_goal}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Star className="w-5 h-5 text-yellow-500" />
+            <span className="text-lg font-medium">
+              Streak: {settings.current_streak} / {settings.streak_goal} days
+            </span>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <div className="bg-white rounded-lg p-6 shadow-inner min-h-[120px] mb-6 text-center">
+          {words.map((word, index) => (
+            <span
+              key={index}
+              className={`inline-block mx-1 text-xl ${index === currentWordIndex && isPlaying
+                ? "text-purple-600 font-bold scale-110 transition-all"
+                : "text-gray-700"
+                }`}
+            >
+              {word}
+            </span>
+          ))}
+        </div>
+
+        <div className="flex justify-center gap-3 mb-6">
+          <Button
+            size="lg"
+            variant={isPlaying ? "outline" : "default"}
+            onClick={handlePlayPause}
+          >
+            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+          </Button>
+          <Button size="lg" variant="outline" onClick={handleStop}>
+            <RotateCcw className="w-5 h-5" />
+          </Button>
+          <Button
+            size="lg"
+            variant={isLooping ? "default" : "outline"}
+            onClick={() => setIsLooping(!isLooping)}
+          >
+            🔄 Loop
+          </Button>
+        </div>
+
+        <div className="flex justify-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => adjustDailyCount(-1)}
+            disabled={settings?.daily_count <= 0}
+          >
+            <Minus className="w-4 h-4" />
+          </Button>
+          <div className="px-4 py-2 bg-gray-100 rounded-md font-medium">
+            {settings?.daily_count}
+          </div>
+          <Button variant="outline" onClick={() => adjustDailyCount(1)}>
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }
