@@ -108,6 +108,26 @@ export class AffirmationSettingsService {
         await db.delete(this.storeName, id);
         return true;
     }
+
+    async exportSettings(): Promise<string | null> {
+        const settings = await this.list();
+        if (settings.length > 0) {
+            return JSON.stringify(settings[0]);
+        }
+        return null;
+    }
+
+    async importSettings(settingsJson: string): Promise<AffirmationSettingsType | undefined> {
+        try {
+            const settings = JSON.parse(settingsJson);
+            if (settings && typeof settings === 'object') {
+                return await this.create(settings);
+            }
+        } catch (error) {
+            console.error('Error importing settings:', error);
+        }
+        return undefined;
+    }
 }
 
 export const affirmationSettingsService = new AffirmationSettingsService();
