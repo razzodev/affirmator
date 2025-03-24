@@ -77,18 +77,29 @@ export default function Settings() {
     };
 
     const getFormValues = (e: React.FormEvent) => {
-        const formData = new FormData(e.target as HTMLFormElement);
+        const form = (e.target as HTMLFormElement).closest("form"); // Get the closest form
+        if (!form) {
+            console.error("Form not found");
+            return {
+                voice_name: '',
+                voice_speed: 1,
+                daily_goal: 0,
+                streak_goal: 0,
+                affirmation_text: '',
+            };
+        }
+
+        const formData = new FormData(form);
         const formEntries = Object.fromEntries(formData.entries());
-        console.log(formEntries.voice_speed);
 
         return {
-            voice_name: String(formEntries.voice_name),
-            voice_speed: Number(formEntries.voice_speed),
-            daily_goal: Number(formEntries.daily_goal),
-            streak_goal: Number(formEntries.streak_goal),
-            affirmation_text: String(formEntries.affirmation_text),
+            voice_name: String(formEntries.voice_name || ""),
+            voice_speed: Number(formEntries.voice_speed || 1),
+            daily_goal: Number(formEntries.daily_goal || 0),
+            streak_goal: Number(formEntries.streak_goal || 0),
+            affirmation_text: String(formEntries.affirmation_text || ""),
         };
-    }
+    };
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
@@ -133,22 +144,28 @@ export default function Settings() {
 
 
     const handleExport = async (e: React.FormEvent): Promise<void> => {
+        e.preventDefault(); // Prevent default form submission
+
         const newValues = getFormValues(e);
         let updatedSettings: AffirmationSettingsType;
-        if (settings) {
+
+        if (settings && settings.id) {
             updatedSettings = {
                 ...settings,
                 ...newValues,
             };
-            await affirmationSettingsService.update(settings.id, updatedSettings);
+            // await affirmationSettingsService.update(settings.id, updatedSettings);
         } else {
             updatedSettings = {
                 ...defaultSettings,
                 ...newValues,
-            }
-            await affirmationSettingsService.create(updatedSettings);
+            };
+            // await affirmationSettingsService.create(updatedSettings);
         }
-        const settingsJson = await affirmationSettingsService.exportSettings();
+        console.log(updatedSettings);
+
+        const settingsJson = await affirmationSettingsService.exportSettings([updatedSettings]);
+
         if (settingsJson) {
             const blob = new Blob([settingsJson], { type: "application/json" });
             const url = URL.createObjectURL(blob);
@@ -166,9 +183,14 @@ export default function Settings() {
             const reader = new FileReader();
             reader.onload = async (e) => {
                 if (e.target && typeof e.target.result === 'string') {
+                    console.log(e.target.result);
+
                     const importedSettings = await affirmationSettingsService.importSettings(e.target.result);
+                    console.log('importedSettings', importedSettings);
+
                     if (importedSettings) {
-                        setSettings(importedSettings);
+                        loadSettings()
+
                     }
                 }
             };
@@ -234,7 +256,7 @@ export default function Settings() {
                                 id="daily_goal"
                                 type="number"
                                 min="1"
-                                defaultValue={settings.daily_goal.toString()}
+                                defaultValue={settings.daily_goal}
                                 name='daily_goal'
                             />
                         </div>
@@ -245,7 +267,7 @@ export default function Settings() {
                                 id="streak_goal"
                                 type="number"
                                 min="1"
-                                defaultValue={settings.streak_goal.toString()}
+                                defaultValue={settings.streak_goal}
                                 name='streak_goal'
                             />
                         </div>
