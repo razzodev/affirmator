@@ -1,9 +1,12 @@
 // Home.tsx
 "use client";
-import React, { useState, useEffect } from "react";
-import { affirmationSettingsService, AffirmationSettingsType } from "@/entities/AffirmationSettings";
+import React, { useState, useRef, useEffect } from "react";
+import { affirmationSettingsService, AffirmationSettingsType, defaultSettings } from "@/services/AffirmationSettings";
+import { VoiceService } from "@/services/VoiceService"; // Adjust the path as needed
+
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import Speech, { HighlightedText } from "react-text-to-speech";
 import {
   Play,
   Pause,
@@ -13,106 +16,96 @@ import {
   Timer,
   Star,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, set } from "date-fns";
 
 export default function Home() {
   const [settings, setSettings] = useState<AffirmationSettingsType | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [currentWordIndex, setCurrentWordIndex] = useState<number>(0);
-  const [words, setWords] = useState<string[]>([]);
+  // const [currentWordIndex, setCurrentWordIndex] = useState<number>(0);
+  // const [words, setWords] = useState<string[]>([]);
   const [isLooping, setIsLooping] = useState<boolean>(false);
-
-  useEffect(() => {
-    loadSettings().then();
-
-  }, []);
-
-  useEffect(() => {
-    if (settings?.affirmation_text) {
-      setWords(settings.affirmation_text.split(" "));
-    }
-  }, [settings?.affirmation_text]);
+  const [voiceService, setVoiceService] = useState<VoiceService | null>(null);
+  const [voicesLoaded, setVoicesLoaded] = useState<boolean>(false); // Add this state
+  // const endDelay = useRef(2000); // Add a ref for end delay (in milliseconds)
 
   const loadSettings = async (): Promise<void> => {
     setIsLoading(true);
     try {
-      const userSettings = await affirmationSettingsService.list();
-      if (userSettings.length > 0) {
-        setSettings(userSettings[0]);
-        if (
-          userSettings[0].last_practice_date &&
-          format(new Date(userSettings[0].last_practice_date), "yyyy-MM-dd") !==
-          format(new Date(), "yyyy-MM-dd")
-        ) {
-          if (
-            format(new Date(userSettings[0].last_practice_date), "yyyy-MM-dd") ===
-            format(new Date(new Date().setDate(new Date().getDate() - 1)), "yyyy-MM-dd")
-          ) {
-            await affirmationSettingsService.update(userSettings[0].id, {
-              daily_count: 0,
-              last_practice_date: new Date().toISOString(),
-              current_streak: userSettings[0].current_streak + 1,
-            });
-          } else {
-            await affirmationSettingsService.update(userSettings[0].id, {
-              daily_count: 0,
-              last_practice_date: new Date().toISOString(),
-              current_streak: 0,
-            });
-          }
-          const updatedSettings = await affirmationSettingsService.list();
-          if (updatedSettings.length > 0) setSettings(updatedSettings[0]);
-        }
-      } else {
-        const newSettings = await affirmationSettingsService.create({
-          affirmation_text: "I am capable of achieving great things",
-          daily_goal: 10,
-          streak_goal: 21,
-          voice_speed: 1,
-          last_practice_date: new Date().toISOString(),
-          current_streak: 0,
-          daily_count: 0,
-        });
-        if (newSettings !== undefined) setSettings(newSettings);
-      }
+      const settings = await affirmationSettingsService.list();
+      handleStreakUpdate(settings[0]);
     } catch (error) {
       console.error("Error loading settings:", error);
     }
     setIsLoading(false);
   };
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isPlaying && words.length > 0) {
-      interval = setInterval(() => {
-        setCurrentWordIndex((prevIndex) => {
-          if (prevIndex >= words.length - 1) {
-            if (isLooping) {
-              incrementDailyCount();
-              return 0;
-            } else {
-              setIsPlaying(false);
-              incrementDailyCount();
-              return prevIndex;
-            }
-          }
-          return prevIndex + 1;
-        });
-      }, settings?.voice_speed ? settings.voice_speed * 300 : 300);
-    }
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying, words, isLooping, settings?.voice_speed]);
 
-  const incrementDailyCount = async (): Promise<void> => {
-    if (!settings) return;
-    const updatedSettings = await affirmationSettingsService.update(settings.id, {
-      daily_count: settings.daily_count + 1,
-      last_practice_date: new Date().toISOString(),
+  useEffect(() => {
+    loadSettings().then(() => {
+      if (typeof window !== "undefined" && typeof window.speechSynthesis !== "undefined") {
+        window.speechSynthesis.onvoiceschanged = () => {
+          setVoicesLoaded(true);
+        };
+        setVoicesLoaded(window.speechSynthesis.getVoices().length > 0);
+
+      }
+      if (settings) {
+
+        setVoiceService(new VoiceService({
+          text: settings.affirmation_text,
+          rate: settings.voice_speed,
+          voice: window.speechSynthesis.getVoices().find((v) => v.name === settings.voice_name) || null,
+        }));
+
+      }
     });
-    if (updatedSettings) setSettings(updatedSettings);
+  }, [])
+
+
+  useEffect(() => {
+    if (voicesLoaded && settings?.affirmation_text && settings?.voice_speed) {
+      // setWords(settings.affirmation_text.split(" "));
+      let voice: SpeechSynthesisVoice | null = null;
+      if (settings.voice_name) {
+        voice = window.speechSynthesis.getVoices().find((v) => v.name === settings.voice_name) || null;
+      }
+
+      setVoiceService(new VoiceService({
+        text: settings.affirmation_text,
+        rate: settings.voice_speed,
+        voice: voice,
+      }));
+    }
+  }, [settings?.affirmation_text, settings?.voice_speed, settings?.voice_name, voicesLoaded]);
+
+  const handleStreakUpdate = async (settings: AffirmationSettingsType) => {
+    const isPracticedToday = format(new Date(settings.last_practice_date), "yyyy-MM-dd") !== format(new Date(), "yyyy-MM-dd")
+    const isPracticedYesterday = format(new Date(settings.last_practice_date), "yyyy-MM-dd") === format(new Date(new Date().setDate(new Date().getDate() - 1)), "yyyy-MM-dd")
+    if (!isPracticedToday) {
+      if (isPracticedYesterday) {
+        await affirmationSettingsService.update(settings.id, {
+          daily_count: 0,
+          current_streak: settings.current_streak + 1,
+          last_practice_date: new Date().toISOString(),
+        })
+      } else {
+        await affirmationSettingsService.update(settings.id, {
+          daily_count: 0,
+          last_practice_date: new Date().toISOString(),
+          current_streak: 0,
+        })
+      }
+      const updatedSettings = await affirmationSettingsService.list();
+      if (updatedSettings.length > 0) setSettings(updatedSettings[0]);
+
+    } else {
+      const newSettings = await affirmationSettingsService.create(defaultSettings);
+      if (newSettings !== undefined) setSettings(newSettings);
+    }
   };
+
+
 
   const adjustDailyCount = async (increment: number): Promise<void> => {
     if (!settings) return;
@@ -124,14 +117,15 @@ export default function Home() {
 
   const handlePlayPause = (): void => {
     if (!isPlaying) {
-      setCurrentWordIndex(0);
+      // setCurrentWordIndex(0);
     }
     setIsPlaying(!isPlaying);
   };
 
   const handleStop = (): void => {
     setIsPlaying(false);
-    setCurrentWordIndex(0);
+    // setCurrentWordIndex(0);
+    setIsLooping(false); // Reset loop when stopped
   };
 
   if (isLoading) {
@@ -159,40 +153,78 @@ export default function Home() {
             </span>
           </div>
         </div>
+        <pre style={{ flex: "1", minHeight: "-webkit-fill-available" }}>
+          {settings.affirmation_text}
+        </pre>
+        <HighlightedText style={{ height: "26px" }}>
+          {settings.affirmation_text}
+        </HighlightedText>
+        <Speech
+          text={settings.affirmation_text}
+          pitch={1}
+          rate={settings.voice_speed}
+          volume={1}
+          voiceURI={settings.voice_name}
+          // highlightMode={true}
+          highlightText={true}
+          showOnlyHighlightedText={false}
+        >
 
-        <div className="bg-white rounded-lg p-6 shadow-inner min-h-[120px] mb-6 text-center">
-          {words.map((word, index) => (
-            <span
-              key={index}
-              className={`inline-block mx-1 text-xl ${index === currentWordIndex && isPlaying
-                ? "text-purple-600 font-bold scale-110 transition-all"
-                : "text-gray-700"
-                }`}
-            >
-              {word}
-            </span>
-          ))}
-        </div>
+          {({ speechStatus, isInQueue, start, pause, stop }) => (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  columnGap: "0.5rem",
+                }}
+              >
+                {isLooping && speechStatus === 'stopped' && (
+                  <>
+                    {start && (
+                      start(),
+                      adjustDailyCount(1)
+                    )}
+                  </>
+                )}
 
-        <div className="flex justify-center gap-3 mb-6">
-          <Button
-            size="lg"
-            variant={isPlaying ? "outline" : "default"}
-            onClick={handlePlayPause}
-          >
-            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-          </Button>
-          <Button size="lg" variant="outline" onClick={handleStop}>
-            <RotateCcw className="w-5 h-5" />
-          </Button>
-          <Button
-            size="lg"
-            variant={isLooping ? "default" : "outline"}
-            onClick={() => setIsLooping(!isLooping)}
-          >
-            🔄 Loop
-          </Button>
-        </div>
+                <div className="flex justify-center gap-3 mb-6">
+
+                  <Button
+                    size="lg"
+                    variant={isPlaying ? "outline" : "default"}
+                    onClick={() => {
+                      handlePlayPause();
+                      if (!isPlaying && start) {
+                        start()
+                        adjustDailyCount(1)
+                      }
+                      if (isPlaying && pause) {
+                        pause()
+                      };
+                    }}
+                  >
+                    {isPlaying ? "Pause" : "Play"}
+                  </Button>
+                  <Button size="lg" variant="outline" onClick={() => {
+                    handleStop()
+                    if (stop) stop()
+                  }}>
+                    <RotateCcw className="w-5 h-5" />
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant={isLooping ? "default" : "outline"}
+                    onClick={() => setIsLooping(!isLooping)}
+                  >
+                    🔄 Loop
+                  </Button>
+                </div>
+              </div>
+
+            </>
+          )}
+        </Speech>
 
         <div className="flex justify-center gap-3">
           <Button
@@ -210,6 +242,100 @@ export default function Home() {
           </Button>
         </div>
       </Card>
-    </div>
+    </div >
   );
 }
+
+// import { useContext, useState } from "react";
+// import Counter from "../components/Counter.jsx";
+// import { AppContext } from "../Context";
+// import Speech, { HighlightedText } from "react-text-to-speech";
+// import UseVoices from "../components/UseVoices";
+// export default function Home() {
+//   const {
+//     affirmationText,
+//     repeatCounter,
+//     setRepeatCounter,
+//     dayStreak,
+//     dayCounter,
+//     setDayCounter,
+//     voice,
+//     speechSpeed,
+//   } = AppContext();
+
+//   const [isLoop, setIsLoop] = useState(false);
+//   return (
+//     <div>
+//       <div style={{ display: "flex", flexDirection: "column" }}>
+//         <Speech
+//           text={affirmationText}
+//           pitch={1}
+//           rate={speechSpeed}
+//           volume={1}
+//           voiceURI={voice}
+//           // highlightMode={true}
+//           highlightText={true}
+//           showOnlyHighlightedText={true}
+//         >
+//           {({ speechStatus, isInQueue, start, pause, stop }) => (
+//             <div
+//               style={{
+//                 display: "flex",
+//                 justifyContent: "center",
+//                 columnGap: "0.5rem",
+//               }}
+//             >
+//               {isLoop &&
+//                 speechStatus === "stopped" &&
+//                 (() => {
+//                   start();
+//                   setRepeatCounter((state) => Number(state) + 1);
+//                 })()}
+//               {speechStatus !== "started" ? (
+//                 <button
+//                   onClick={() => {
+//                     start();
+//                     setRepeatCounter((state) => Number(state) + 1);
+//                   }}
+//                 >
+//                   Start
+//                 </button>
+//               ) : (
+//                 <>
+//                   <button onClick={() => setIsLoop((state) => !state)}>
+//                     {!isLoop ? "Loop" : "Off"}
+//                   </button>
+//                   <button onClick={pause}>Pause</button>
+//                 </>
+//               )}
+//               <button
+//                 onClick={() => {
+//                   stop();
+//                   setIsLoop(false);
+//                 }}
+//               >
+//                 Stop
+//               </button>
+//               <div></div>
+//             </div>
+//           )}
+//         </Speech>
+//         <pre style={{ flex: "1", minHeight: "-webkit-fill-available" }}>
+//           {affirmationText}
+//         </pre>
+//         <HighlightedText style={{ height: "26px" }}>
+//           {affirmationText}
+//         </HighlightedText>
+//       </div>
+//       <div>
+//         <p>days: {dayStreak}</p>
+//       </div>
+//       {/* <Counter label="days" state={dayCounter} action={setDayCounter} /> */}
+//       <Counter
+//         label="repeats"
+//         state={repeatCounter}
+//         action={setRepeatCounter}
+//       />
+//     </div>
+//   );
+// }
