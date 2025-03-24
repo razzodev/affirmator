@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 // Home.tsx
 "use client";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { affirmationSettingsService, AffirmationSettingsType, handleStreakUpdate } from "@/services/AffirmationSettings";
 import { VoiceService } from "@/services/VoiceService"; // Adjust the path as needed
 
@@ -22,9 +22,8 @@ export default function Home() {
   const [settings, setSettings] = useState<AffirmationSettingsType | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  // const [currentWordIndex, setCurrentWordIndex] = useState<number>(0);
-  // const [words, setWords] = useState<string[]>([]);
   const [isLooping, setIsLooping] = useState<boolean>(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [voiceService, setVoiceService] = useState<VoiceService | null>(null);
   const [voicesLoaded, setVoicesLoaded] = useState<boolean>(false); // Add this state
   // const endDelay = useRef(2000); // Add a ref for end delay (in milliseconds)
